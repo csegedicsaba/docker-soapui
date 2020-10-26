@@ -1,10 +1,9 @@
 FROM centos:7
 FROM python:2.7
 FROM java:openjdk-8-jdk
-MAINTAINER Daniel Davison <sircapsalot@gmail.com>
 
 #  Version
-ENV   SOAPUI_VERSION  5.4.0
+ENV   SOAPUI_VERSION  5.6.0
 
 COPY entry_point.sh /opt/bin/entry_point.sh
 COPY server.py /opt/bin/server.py
