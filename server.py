@@ -2,8 +2,8 @@
 from __future__ import print_function
 
 import cgi
-import urlparse
-from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
+from urllib import parse
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from subprocess import Popen, PIPE
 
 
@@ -21,15 +21,17 @@ class S(BaseHTTPRequestHandler):
 
     def do_POST(self):
         # self._set_headers()
-        ctype, pdict = cgi.parse_header(self.headers.getheader('content-type'))
+        ctype, pdict = cgi.parse_header(self.headers.get('content-type'))
+        print("ctype: ", ctype)
         if ctype == 'multipart/form-data':
+            pdict['boundary'] = bytes(pdict['boundary'], "utf-8")
             postvars = cgi.parse_multipart(self.rfile, pdict)
         elif ctype == 'application/x-www-form-urlencoded':
-            length = int(self.headers.getheader('content-length'))
-            postvars = urlparse.parse_qs(self.rfile.read(length), keep_blank_values=1)
+            length = int(self.headers.get('content-length'))
+            postvars = parse.parse_qs(self.rfile.read(length), True)
         elif ctype == 'text/xml':
-            length = int(self.headers.getheader('content-length'))
-            postvars = urlparse.parse_qs(self.rfile.read(length), keep_blank_values=1)
+            length = int(self.headers.get('content-length'))
+            postvars = parse.parse_qs(self.rfile.read(length), True)
         else:
             postvars = {}
 
@@ -37,7 +39,10 @@ class S(BaseHTTPRequestHandler):
         xml = postvars.get('project')
         properties = postvars.get('properties')
         option = postvars.get('option')
-        
+        load = postvars.get('load')
+        loadTest = postvars.get('loadTest')
+
+
         if not xml:
             self.send_response(552, message='No SoapUI Project')
             self.end_headers()
@@ -46,22 +51,29 @@ class S(BaseHTTPRequestHandler):
         else:
             xml = xml[0]
 
-        f = open('/tmp/soapui-project.xml', 'w')
-        print(xml, file=f)
-        f.close()
-        
-        arguments = ['/opt/SoapUI/bin/testrunner.sh']
+        print('project: ', xml)
 
-        if suite: 
-            arguments.append('-s"%s"' % suite[0])
+        with open('/tmp/soapui-project.xml', 'wb') as w:
+            w.write(xml)
+
+        if load:
+             arguments = ['/opt/SoapUI/bin/loadtestrunner.sh']
+        else:
+            arguments = ['/opt/SoapUI/bin/testrunner.sh']
+
+        if suite:
+            arguments.append('-s"%s"' % suite[0].decode(encoding='UTF-8'))
+
+        if loadTest:
+            arguments.append('-l"%s"' % loadTest[0].decode(encoding='UTF-8'))
 
         if option:
             for op in option:
-                for line in op.splitlines():
+                for line in op.decode(encoding='UTF-8').splitlines():
                     arguments.append('%s' % line)
 
         if properties:
-            properties = properties[0]
+            properties = properties[0].decode(encoding='UTF-8')
             f = open('/tmp/global.properties', 'w')
             print(properties, file=f)
             f.close()
@@ -69,9 +81,14 @@ class S(BaseHTTPRequestHandler):
 
         arguments.append('/tmp/soapui-project.xml')
 
+        print('arguments: ', arguments )
+
         p = Popen(arguments, stdin=PIPE, stdout=PIPE, stderr=PIPE, bufsize=-1)
         try:
             output, error = p.communicate()
+
+            print('Error', error)
+            print('Output', output)
 
             if p.returncode >= 1:
                 self.send_response(550, message='Test Failure(s)')
@@ -84,6 +101,7 @@ class S(BaseHTTPRequestHandler):
                 self.wfile.write(output)
 
         except Exception as e:
+            print('Exception', e)
             self.send_response(500)
             self.wfile.write(e)
 
